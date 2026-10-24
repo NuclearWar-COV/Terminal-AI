@@ -1,0 +1,51 @@
+# Terminal AI V8c - Python dependencies
+# Install: pip install -r requirements.txt
+
+# Core AI stack
+# NOTE: torch is intentionally NOT listed here. BUILD.bat / build.sh
+# install it separately BEFORE this file, because the right build
+# depends on your hardware:
+#   - NVIDIA GPU present -> CUDA build from download.pytorch.org
+#     (plain `pip install torch` from PyPI is CPU-ONLY and silently
+#     "hides" an NVIDIA GPU that's actually right there)
+#   - RTX 50-series (Blackwell, sm_120) specifically needs a CUDA 12.8+
+#     build (cu128) — older cu118/cu121/cu124 wheels don't include
+#     Blackwell kernels at all and will also fail to use the GPU.
+#   - No NVIDIA GPU -> CPU build
+# If you're installing manually without the build scripts, run this
+# FIRST for an NVIDIA GPU (Blackwell/RTX 50-series or otherwise):
+#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+# then install the rest of this file.
+transformers>=4.40.0
+accelerate>=0.24.0
+datasets>=2.14.0
+safetensors>=0.4.0
+peft>=0.10.0
+
+# Training data formats (csv/tsv/parquet prompt+answer files)
+pandas>=1.5.0
+pyarrow>=12.0.0
+
+# Image / video generation (Admin -> Models -> "Image & video models")
+diffusers>=0.30.0
+imageio>=2.31.0
+imageio-ffmpeg>=0.4.9
+
+# Web / search / scrape
+requests>=2.28.0
+urllib3>=1.26.0
+
+# Hardware monitoring
+psutil>=5.9.0
+py-cpuinfo>=9.0.0
+
+# Optional hardware acceleration (uncomment what you need)
+# openvino
+# optimum[openvino]
+# optimum-intel
+# onnxruntime
+# onnxruntime-directml
+# torch-directml
+
+# Remote training worker
+flask>=2.3.0

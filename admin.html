@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terminal AI — Admin</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{--bg:#0d1210; --panel:#131a17; --panel-2:#182019; --line:#25322b;
+        --text:#d7e4dc; --muted:#7c9086; --accent:#4fd68c; --danger:#e0715c;}
+  *{box-sizing:border-box;}
+  body{background:radial-gradient(ellipse at 50% -20%,rgba(79,214,140,.07),transparent 55%),var(--bg);
+       color:var(--text); font-family:"JetBrains Mono","SF Mono",Consolas,monospace;
+       margin:0 auto; padding:28px clamp(16px,3vw,42px); max-width:1600px;}
+  header{display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:24px;
+       padding-bottom:16px; border-bottom:1px solid var(--line);}
+  h1{font-size:16px; letter-spacing:.08em; text-transform:uppercase; margin:0;}
+  a.logout{color:var(--muted); font-size:12px; text-decoration:none; border:1px solid var(--line);
+        padding:6px 12px; border-radius:6px;}
+  a.logout:hover{border-color:var(--danger); color:var(--danger);}
+  .grid{display:grid; grid-template-columns:minmax(0,1.35fr) minmax(340px,1fr); gap:18px; align-items:start;}
+  @media (max-width:1050px){.grid{grid-template-columns:minmax(0,1fr);}}
+  .panel{background:linear-gradient(145deg,rgba(255,255,255,.018),transparent 60%),var(--panel);
+       border:1px solid var(--line); border-radius:12px; padding:20px; box-shadow:0 12px 36px rgba(0,0,0,.12);}
+  .panel h2{font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin:0 0 14px;}
+  table{width:100%; border-collapse:collapse; font-size:12px;}
+  th{text-align:left; color:var(--muted); font-weight:400; padding:6px 8px; border-bottom:1px solid var(--line);}
+  td{padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:middle;}
+  input[type=number]{width:60px; background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+        border-radius:4px; padding:4px 6px; font-family:inherit; font-size:12px;}
+  .save{background:var(--accent); color:#08110c; border:none; border-radius:4px; padding:4px 10px;
+        font-family:inherit; cursor:pointer; font-size:11px; font-weight:700;}
+  .meta-row{display:flex; justify-content:space-between; font-size:12px; padding:5px 0; border-bottom:1px solid var(--line);}
+  .meta-row span:first-child{color:var(--muted);}
+  canvas{max-height:160px;}
+  .no-users{color:var(--muted); font-size:12px; padding:8px;}
+  input[type=text],input[type=password],select{background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+       border-radius:6px; padding:7px 9px; font-family:inherit; font-size:12px;}
+  input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  button{transition:filter .15s,border-color .15s,background .15s;}
+  button:hover:not(:disabled){filter:brightness(1.08);}
+  @media(max-width:700px){body{padding:16px 12px;}header{align-items:flex-start;flex-direction:column;}header>div{display:flex;flex-wrap:wrap;gap:7px;}header>div a{margin:0!important;}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Terminal AI — Admin</h1>
+  <div>
+    <a href="/" style="color:var(--muted); font-size:12px; text-decoration:none; margin-right:16px; border:1px solid var(--line); padding:6px 12px; border-radius:6px;">Chat</a>
+    <a href="/admin/training" style="color:var(--muted); font-size:12px; text-decoration:none; margin-right:16px; border:1px solid var(--line); padding:6px 12px; border-radius:6px;">Training &amp; Models</a>
+    <a href="/admin/peers" style="color:var(--muted); font-size:12px; text-decoration:none; margin-right:16px; border:1px solid var(--line); padding:6px 12px; border-radius:6px;">Peers</a>
+    <a class="logout" href="/admin/logout">Log out</a>
+  </div>
+</header>
+
+<div class="grid">
+ <div>
+  <div class="panel">
+    <h2>Connected users &amp; priority</h2>
+    <table>
+      <thead><tr><th>Name</th><th>Tok/min used</th><th>Priority (1=highest, 10=lowest)</th><th>Tok/min budget</th><th>Max tokens/msg</th><th></th></tr></thead>
+      <tbody id="user-rows"></tbody>
+    </table>
+    <div id="no-users" class="no-users" style="display:none;">No one has connected yet. Once someone opens the chat page, they'll show up here.</div>
+    <p style="font-size:11px;color:var(--muted);margin-top:12px;">
+      Priority decides who gets served next when several people send messages at once — there's
+      one shared generation queue, so it can't run two replies simultaneously. Tok/min budget throttles how
+      much of the model's time a person can use per minute once things are busy.
+    </p>
+  </div>
+
+  <div class="panel" style="margin-top:24px;">
+    <h2>Accounts</h2>
+    <p style="font-size:11px; color:var(--muted); margin:-6px 0 12px;">
+      Self-signup is currently {% if allow_registration %}<span style="color:var(--accent);">ON</span> — anyone can create their own Standard account from /login.{% else %}<span style="color:var(--danger);">OFF</span> — only admins can create accounts here.{% endif %}
+      Toggle it in the Control Panel Settings tab. Self-signup can never create an Administrator account.
+    </p>
+    <table>
+      <thead><tr><th>Username</th><th>Role</th><th>Priority</th><th>Tok/min</th><th>Max/msg</th><th></th></tr></thead>
+      <tbody id="account-rows"></tbody>
+    </table>
+    <div id="no-accounts" class="no-users" style="display:none;"></div>
+
+    <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <input type="text" id="new-username" placeholder="username" style="width:90px;">
+        <input type="text" id="new-password" placeholder="password" style="width:90px;">
+        <select id="new-role" style="width:100px; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:4px; font-family:inherit; font-size:12px;">
+          <option value="standard">Standard</option>
+          <option value="administrator">Administrator</option>
+        </select>
+        <input type="number" id="new-priority" placeholder="priority (1=highest)" min="1" max="10" value="5" style="width:110px;">
+        <input type="number" id="new-tpm" placeholder="tok/min" value="6000" style="width:70px;">
+        <button class="btn-action" id="add-account">Add account</button>
+      </div>
+      <div id="add-error" style="color:var(--danger); font-size:11px; margin-top:6px;"></div>
+    </div>
+  </div>
+ </div>
+
+ <div class="panel">
+    <h2>Server</h2>
+    <div class="meta-row"><span>Hardware</span><span>{{ hardware.device_name }}</span></div>
+    {% if hardware.cuda_warning %}
+    <div class="note" style="color:var(--danger); border:1px solid var(--danger); border-radius:6px; padding:8px 10px; margin-top:6px;">
+      ⚠ {{ hardware.cuda_warning }}
+    </div>
+    {% endif %}
+    <div class="meta-row"><span>Model</span><span style="word-break:break-all;">{{ model_path }}</span></div>
+    <div class="meta-row"><span>Hard token ceiling</span><span>{{ hard_cap }}</span></div>
+    <h2 style="margin-top:20px;">Live usage</h2>
+    <canvas id="cpu-chart"></canvas>
+    <canvas id="ram-chart" style="margin-top:16px;"></canvas>
+    <canvas id="gpu-chart" style="margin-top:16px;"></canvas>
+    <p style="font-size:10px; color:var(--muted); line-height:1.45; margin:8px 0 0;">
+      System-wide CPU and physical-memory samples use Windows/psutil counters. GPU is engine utilization
+      from NVIDIA driver telemetry or Windows GPU Engine counters; model VRAM allocations are not used as a
+      substitute for GPU utilization. Samples are taken every 0.5 seconds.
+    </p>
+    <div id="gpu-note" style="display:none; font-size:11px; color:var(--muted); margin-top:8px;">GPU utilization telemetry is unavailable on this system.</div>
+  </div>
+
+  <div class="panel" style="margin-top:24px;">
+    <h2>Upload limits</h2>
+    <p style="font-size:11px; color:var(--muted); margin:-6px 0 12px;">
+      Max files a person can have stored in their own uploads folder at once. <code>-1</code> = unlimited, <code>0</code> = uploads disabled for that role.
+      When a guest's limit is 0, they won't see a file viewer at all, and clicking "add file" prompts them to create an account instead.
+    </p>
+    <table>
+      <thead><tr><th>Role</th><th>Max files</th></tr></thead>
+      <tbody>
+        <tr><td>Guests</td><td><input type="number" id="limit-guest" min="-1" value="{{ settings.upload_limits.guest }}"></td></tr>
+        <tr><td>Standard users</td><td><input type="number" id="limit-user" min="-1" value="{{ settings.upload_limits.user }}"></td></tr>
+        <tr><td>Administrators</td><td><input type="number" id="limit-admin" min="-1" value="{{ settings.upload_limits.admin }}"></td></tr>
+      </tbody>
+    </table>
+    <button class="btn-action" id="save-upload-limits" style="margin-top:10px;">Save</button>
+    <div id="upload-limits-msg" style="font-size:11px; margin-top:6px;"></div>
+  </div>
+
+  <div class="panel" style="margin-top:24px;">
+    <h2>Generation models</h2>
+    <p style="font-size:11px; color:var(--muted); margin:-6px 0 12px;">
+      Choose the default text, image, and video models used in new chats. Text-to-video models such as Wan 2.1
+      appear under Video. Image and video generation require <code>diffusers</code>.
+    </p>
+    <div class="field" style="margin-bottom:10px;">
+      <label style="font-size:11px; color:var(--muted); display:block; margin-bottom:4px;">Default text model</label>
+      <select id="text-model-path" data-current="{{ settings.generation.text_model_path }}" style="width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:12px;">
+        <option value="{{ settings.generation.text_model_path }}">{{ 'Use server startup model' if not settings.generation.text_model_path else settings.generation.text_model_path }}</option>
+      </select>
+    </div>
+    <div class="field" style="margin-bottom:10px;">
+      <label style="font-size:11px; color:var(--muted); display:block; margin-bottom:4px;">Default image model</label>
+      <select id="image-model-path" data-current="{{ settings.generation.image_model_path }}" style="width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:12px;">
+        <option value="{{ settings.generation.image_model_path }}">{{ 'No default image model' if not settings.generation.image_model_path else settings.generation.image_model_path }}</option>
+      </select>
+    </div>
+    <div class="field" style="margin-bottom:10px;">
+      <label style="font-size:11px; color:var(--muted); display:block; margin-bottom:4px;">Default video model</label>
+      <select id="video-model-path" data-current="{{ settings.generation.video_model_path }}" style="width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:12px;">
+        <option value="{{ settings.generation.video_model_path }}">{{ 'No default video model' if not settings.generation.video_model_path else settings.generation.video_model_path }}</option>
+      </select>
+    </div>
+    <button class="btn-action" id="save-generation-settings">Save</button>
+    <div id="generation-settings-msg" style="font-size:11px; margin-top:6px;"></div>
+  </div>
+
+  <div class="panel" style="margin-top:24px;">
+    <h2>Model access &amp; instances</h2>
+    <p style="font-size:11px; color:var(--muted); margin:-6px 0 12px;">
+    Administrators always have access to every model. Set access for standard users and guests here. Start the same model more than once to run separate instances; each chat can choose an allowed text model.
+    </p>
+    <div id="model-access-inventory" style="display:grid; gap:12px;"></div>
+    <button class="btn-action" id="save-model-access" style="margin-top:12px;" disabled>Save access</button>
+    <div id="model-access-msg" role="status" style="font-size:11px; margin-top:6px;"></div>
+    <h2 style="margin-top:24px;">Running instances</h2>
+    <div id="admin-instance-list" style="display:grid; gap:8px;"></div>
+    <div class="field" style="display:flex; gap:8px; margin-top:12px;">
+      <select id="admin-instance-model" aria-label="Model to start" style="flex:1;"></select>
+      <select id="admin-instance-device" aria-label="Model device">
+        <option value="auto">Auto</option><option value="cpu">CPU</option><option value="gpu">GPU</option>
+      </select>
+      <button class="btn-action" id="admin-start-instance">Start instance</button>
+    </div>
+    <div id="admin-instance-msg" role="status" style="font-size:11px; margin-top:6px;"></div>
+  </div>
+
+  <div class="panel" style="margin-top:24px;">
+    <h2>Web search (used by /lookup)</h2>
+    <p style="font-size:11px; color:var(--muted); margin:-6px 0 12px;">
+      Which engine to try first (it automatically falls back to the others if one fails), and how many of the
+      top results to fetch and summarize per lookup. More sites = a more thorough answer but a slower one.
+    </p>
+    <div class="field" style="margin-bottom:10px;">
+      <label style="font-size:11px; color:var(--muted); display:block; margin-bottom:4px;">Default search engine</label>
+      <select id="search-engine" style="background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:12px;">
+        <option value="duckduckgo" {{ 'selected' if settings.search.engine == 'duckduckgo' else '' }}>DuckDuckGo</option>
+        <option value="google" {{ 'selected' if settings.search.engine == 'google' else '' }}>Google</option>
+        <option value="bing" {{ 'selected' if settings.search.engine == 'bing' else '' }}>Bing</option>
+        <option value="yahoo" {{ 'selected' if settings.search.engine == 'yahoo' else '' }}>Yahoo</option>
+      </select>
+    </div>
+    <div class="field" style="margin-bottom:10px;">
+      <label style="font-size:11px; color:var(--muted); display:block; margin-bottom:4px;">Sites to read &amp; summarize per lookup (1-10)</label>
+      <input type="number" id="search-max-sites" min="1" max="10" value="{{ settings.search.max_sites }}" style="width:70px; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:4px; padding:5px 8px; font-family:inherit; font-size:12px;">
+    </div>
+    <button class="btn-action" id="save-search-settings">Save</button>
+    <div id="search-settings-msg" style="font-size:11px; margin-top:6px;"></div>
+  </div>
+</div>
+
+<style>
+  .btn-action{background:var(--accent); color:var(--bg); border:none; border-radius:4px; padding:5px 12px; font-family:inherit; cursor:pointer; font-size:11px; font-weight:700;}
+  .btn-danger{background:transparent; border:1px solid var(--danger); color:var(--danger); border-radius:4px; padding:5px 10px; font-family:inherit; cursor:pointer; font-size:11px;}
+  #account-rows input[type=number], #user-rows input[type=number]{width:70px; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:4px; padding:3px 5px; font-family:inherit; font-size:11px;}
+  #account-rows select{background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:4px; font-family:inherit; font-size:11px;}
+</style>
+
+<script>
+const activeUsers = {{ active | tojson }};
+const policies = {{ policies | tojson }};
+const accounts = {{ accounts | tojson }};
+
+function renderAccounts(){
+  const tbody = document.getElementById('account-rows');
+  tbody.innerHTML = '';
+  const names = Object.keys(accounts);
+  document.getElementById('no-accounts').style.display = names.length ? 'none' : 'block';
+  document.getElementById('no-accounts').textContent = 'No accounts yet.';
+  for (const username of names) {
+    const p = policies[username] || {priority:5, tokens_per_min:6000, max_tokens:1024};
+    const role = accounts[username].role || 'standard';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${username}</td>
+      <td>
+        <select data-field="role">
+          <option value="standard" ${role==='standard'?'selected':''}>Standard</option>
+          <option value="administrator" ${role==='administrator'?'selected':''}>Administrator</option>
+        </select>
+      </td>
+      <td><input type="number" min="1" max="10" value="${p.priority}" data-field="priority"></td>
+      <td><input type="number" min="0" step="500" value="${p.tokens_per_min}" data-field="tokens_per_min"></td>
+      <td><input type="number" min="16" max="{{ hard_cap }}" value="${p.max_tokens}" data-field="max_tokens"></td>
+      <td>
+        <button class="btn-action" data-action="save" data-username="${username}">Save</button>
+        <button class="btn-danger" data-action="delete" data-username="${username}" style="margin-left:4px;">Delete</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  }
+  // Scoped to #account-rows only — never touches buttons elsewhere on the page.
+  tbody.querySelectorAll('button[data-action="save"]').forEach(btn => {
+    btn.onclick = async () => {
+      const username = btn.dataset.username;
+      const row = btn.closest('tr');
+      const body = {sid: username};
+      row.querySelectorAll('[data-field]').forEach(el => { body[el.dataset.field] = el.value; });
+      const r = await fetch('/admin/policy', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+      const d = await r.json();
+      if (!r.ok) { alert(d.error || 'Could not save.'); return; }
+      btn.textContent = 'Saved';
+      setTimeout(() => btn.textContent = 'Save', 1200);
+    };
+  });
+  tbody.querySelectorAll('button[data-action="delete"]').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm(`Delete account "${btn.dataset.username}"?`)) return;
+      const r = await fetch('/admin/users/delete', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({username: btn.dataset.username})});
+      const d = await r.json();
+      if (!r.ok) { alert(d.error || 'Could not delete account.'); return; }
+      location.reload();
+    };
+  });
+}
+renderAccounts();
+
+document.getElementById('add-account').onclick = async () => {
+  const username = document.getElementById('new-username').value.trim();
+  const password = document.getElementById('new-password').value;
+  const role = document.getElementById('new-role').value;
+  const priority = document.getElementById('new-priority').value || 5;
+  const tokens_per_min = document.getElementById('new-tpm').value || 6000;
+  const errEl = document.getElementById('add-error');
+  errEl.textContent = '';
+  if (!username || !password) { errEl.textContent = 'Username and password are both required.'; return; }
+  const r = await fetch('/admin/users/create', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({username, password, role, priority, tokens_per_min})});
+  const d = await r.json();
+  if (!r.ok) { errEl.textContent = d.error || 'Could not create account.'; return; }
+  location.reload();
+};
+
+function renderUsers(){
+  const tbody = document.getElementById('user-rows');
+  tbody.innerHTML = '';
+  const sids = Object.keys(activeUsers);
+  document.getElementById('no-users').style.display = sids.length ? 'none' : 'block';
+  for (const sid of sids) {
+    const u = activeUsers[sid];
+    const p = policies[sid] || {priority:5, tokens_per_min:6000, max_tokens:1024};
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${u.name}</td>
+      <td>${u.tokens_last_min}</td>
+      <td><input type="number" min="1" max="10" value="${p.priority}" data-field="priority"></td>
+      <td><input type="number" min="0" step="500" value="${p.tokens_per_min}" data-field="tokens_per_min"></td>
+      <td><input type="number" min="16" max="{{ hard_cap }}" value="${p.max_tokens}" data-field="max_tokens"></td>
+      <td><button class="btn-action" data-sid="${sid}">Save</button></td>
+    `;
+    tbody.appendChild(tr);
+  }
+  // BUG FIX: this used to be document.querySelectorAll('.save') — matching
+  // every '.save' button on the ENTIRE page (Add account, Delete in the
+  // Accounts table, etc.) and overwriting their click handlers with this
+  // table's save-policy logic. Scoped to this tbody only, like renderAccounts() does.
+  tbody.querySelectorAll('button[data-sid]').forEach(btn => {
+    btn.onclick = async () => {
+      const sid = btn.dataset.sid;
+      const row = btn.closest('tr');
+      const body = {sid};
+      row.querySelectorAll('[data-field]').forEach(el => { body[el.dataset.field] = el.value; });
+      const r = await fetch('/admin/policy', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+      if (!r.ok) { const d = await r.json(); alert(d.error || 'Could not save.'); return; }
+      btn.textContent = 'Saved';
+      setTimeout(() => btn.textContent = 'Save', 1200);
+    };
+  });
+}
+renderUsers();
+
+const cpuChart = new Chart(document.getElementById('cpu-chart'), {
+  type: 'line',
+  data: {labels: [], datasets: [{label:'CPU utilization (%)', data:[], borderColor:'#4fd68c', tension:0, pointRadius:0, spanGaps:false}]},
+  options: {animation:false, scales:{y:{min:0,max:100,ticks:{color:'#7c9086'}}, x:{display:false}},
+            plugins:{legend:{labels:{color:'#d7e4dc'}}}}
+});
+const ramChart = new Chart(document.getElementById('ram-chart'), {
+  type: 'line',
+  data: {labels: [], datasets: [{label:'Physical memory used (%)', data:[], borderColor:'#e0715c', tension:0, pointRadius:0, spanGaps:false}]},
+  options: {animation:false, scales:{y:{min:0,max:100,ticks:{color:'#7c9086'}}, x:{display:false}},
+            plugins:{legend:{labels:{color:'#d7e4dc'}}}}
+});
+const gpuChart = new Chart(document.getElementById('gpu-chart'), {
+  type: 'line',
+  data: {labels: [], datasets: [{label:'GPU engine utilization (%)', data:[], borderColor:'#5cb8e0', tension:0, pointRadius:0, spanGaps:false}]},
+  options: {animation:false, scales:{y:{min:0,max:100,ticks:{color:'#7c9086'}}, x:{display:false}},
+            plugins:{legend:{labels:{color:'#d7e4dc'}}}}
+});
+
+let sawGpuData = false;
+let hwPollErrorLogged = false;
+async function pollHw(){
+  try {
+    const r = await fetch('/api/hw_stats', {cache:'no-store'});
+    if (!r.ok) throw new Error(`Hardware stats request failed (${r.status}).`);
+    const d = await r.json();
+    hwPollErrorLogged = false;
+    const t = new Date().toLocaleTimeString();
+    for (const chart of [cpuChart, ramChart, gpuChart]) {
+      chart.data.labels.push(t);
+      if (chart.data.labels.length > 30) chart.data.labels.shift();
+    }
+    cpuChart.data.datasets[0].data.push(Number.isFinite(d.cpu_pct) ? d.cpu_pct : null);
+    ramChart.data.datasets[0].data.push(Number.isFinite(d.ram_pct) ? d.ram_pct : null);
+    if (d.gpu_pct !== null && d.gpu_pct !== undefined) {
+      sawGpuData = true;
+      gpuChart.data.datasets[0].data.push(d.gpu_pct);
+      gpuChart.data.datasets[0].label = `${d.gpu_name || 'GPU'} engine utilization (%)`;
+      document.getElementById('gpu-chart').style.display = 'block';
+      document.getElementById('gpu-note').style.display = 'none';
+    } else {
+      gpuChart.data.datasets[0].data.push(null);
+      if (sawGpuData) {
+        document.getElementById('gpu-chart').style.display = 'block';
+        document.getElementById('gpu-note').style.display = 'none';
+      } else {
+        document.getElementById('gpu-chart').style.display = 'none';
+        document.getElementById('gpu-note').style.display = 'block';
+      }
+    }
+    for (const chart of [cpuChart, ramChart, gpuChart]) {
+      if (chart.data.datasets[0].data.length > 30) chart.data.datasets[0].data.shift();
+      chart.update('none');
+    }
+  } catch(e) {
+    if (!hwPollErrorLogged) console.warn('Hardware stats poll failed:', e);
+    hwPollErrorLogged = true;
+  } finally {
+    setTimeout(pollHw, 3000);
+  }
+}
+pollHw();
+
+document.getElementById('save-upload-limits').onclick = async () => {
+  const msgEl = document.getElementById('upload-limits-msg');
+  msgEl.textContent = '';
+  const body = {
+    guest: document.getElementById('limit-guest').value,
+    user: document.getElementById('limit-user').value,
+    admin: document.getElementById('limit-admin').value,
+  };
+  const r = await fetch('/admin/settings/upload_limits', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const d = await r.json();
+  if (!r.ok) { msgEl.style.color = 'var(--danger)'; msgEl.textContent = d.error || 'Could not save.'; return; }
+  msgEl.style.color = 'var(--accent)'; msgEl.textContent = 'Saved.';
+  setTimeout(() => msgEl.textContent = '', 2000);
+};
+
+document.getElementById('save-generation-settings').onclick = async () => {
+  const msgEl = document.getElementById('generation-settings-msg');
+  msgEl.textContent = '';
+  const body = {
+    image_model_path: document.getElementById('image-model-path').value.trim(),
+    video_model_path: document.getElementById('video-model-path').value.trim(),
+  };
+  const r = await fetch('/admin/settings/generation', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const d = await r.json();
+  if (!r.ok) { msgEl.style.color = 'var(--danger)'; msgEl.textContent = d.error || 'Could not save.'; return; }
+  msgEl.style.color = 'var(--accent)'; msgEl.textContent = 'Saved.';
+  setTimeout(() => msgEl.textContent = '', 2000);
+};
+
+const modelInventory = document.getElementById('model-access-inventory');
+const modelAccessMsg = document.getElementById('model-access-msg');
+const saveModelAccess = document.getElementById('save-model-access');
+const adminInstanceList = document.getElementById('admin-instance-list');
+const adminInstanceModel = document.getElementById('admin-instance-model');
+let modelInventoryData = [];
+async function readAdminJson(response, fallback){
+  let data;
+  try {
+    data = await response.json();
+  } catch (error) {
+    if (response.redirected && response.url.includes('/login')) {
+      throw new Error('Your admin session has expired. Sign in again and retry.');
+    }
+    throw new Error(`${fallback} Server returned HTTP ${response.status} without JSON.`);
+  }
+  if (!response.ok) throw new Error(data.error || fallback);
+  return data;
+}
+async function loadModelInventory(){
+  const r = await fetch('/admin/model_switching/list');
+  const d = await readAdminJson(r, 'Could not load model inventory.');
+  modelInventoryData = d.models || [];
+  for (const [kind, id, emptyLabel] of [
+    ['text', 'text-model-path', 'Use server startup model'],
+    ['image', 'image-model-path', 'No default image model'],
+    ['video', 'video-model-path', 'No default video model'],
+  ]) {
+    const select = document.getElementById(id);
+    const current = select.dataset.current || '';
+    select.replaceChildren();
+    const empty = document.createElement('option');
+    empty.value = '';
+    empty.textContent = emptyLabel;
+    select.appendChild(empty);
+    const entries = modelInventoryData.filter(model => model.kind === kind && model.usable !== false);
+    for (const model of entries) {
+      const option = document.createElement('option');
+      option.value = model.path;
+      option.textContent = model.name;
+      option.title = model.path;
+      select.appendChild(option);
+    }
+    if (current && !entries.some(model => model.path === current)) {
+      const option = document.createElement('option');
+      option.value = current;
+      option.textContent = `Unavailable model · ${current}`;
+      option.title = current;
+      select.appendChild(option);
+    }
+    select.value = current;
+  }
+  modelInventory.innerHTML = '';
+  saveModelAccess.disabled = false;
+  for (const kind of ['text', 'image', 'video']) {
+    const entries = modelInventoryData.filter(model => model.kind === kind);
+    const section = document.createElement('section');
+    const heading = document.createElement('div');
+    heading.textContent = `${kind[0].toUpperCase()}${kind.slice(1)} models`;
+    heading.style.cssText = 'font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:5px;';
+    section.appendChild(heading);
+    if (!entries.length) {
+      const empty = document.createElement('div');
+      empty.textContent = `No local ${kind} models found.`;
+      empty.style.cssText = 'font-size:11px; color:var(--muted); padding:5px 0;';
+      section.appendChild(empty);
+    }
+    for (const model of entries) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:grid; grid-template-columns:minmax(120px,1fr) repeat(3,auto); align-items:center; gap:10px; padding:8px 2px; font-size:11px; border-top:1px solid var(--line);';
+      const details = document.createElement('span');
+      details.style.cssText = 'min-width:0; overflow-wrap:anywhere;';
+      details.textContent = `${model.name}${model.usable === false ? ` — ${model.note || 'not usable'}` : ''}`;
+      details.title = model.path;
+      row.appendChild(details);
+      for (const [role, label] of [['administrator', 'Admins'], ['standard', 'Standard'], ['guest', 'Guests']]) {
+        const accessLabel = document.createElement('label');
+        accessLabel.style.cssText = 'display:flex; align-items:center; gap:4px; white-space:nowrap;';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.dataset.modelPath = model.path;
+        checkbox.dataset.role = role;
+        checkbox.checked = (model.roles || []).includes(role);
+        checkbox.style.margin = '1px 0 0';
+        if (role === 'administrator') {
+          checkbox.checked = true;
+          checkbox.disabled = true;
+          checkbox.title = 'Administrators always have access to every model.';
+        } else {
+          checkbox.disabled = model.usable === false;
+        }
+        accessLabel.append(checkbox, label);
+        row.appendChild(accessLabel);
+      }
+      section.appendChild(row);
+    }
+    modelInventory.appendChild(section);
+  }
+  adminInstanceModel.replaceChildren();
+  for (const model of modelInventoryData.filter(entry => entry.usable !== false)) {
+    const option = document.createElement('option');
+    option.value = JSON.stringify({kind:model.kind, path:model.path});
+    option.textContent = `${model.kind[0].toUpperCase()}${model.kind.slice(1)} · ${model.name}`;
+    adminInstanceModel.appendChild(option);
+  }
+  if (!adminInstanceModel.options.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No usable local models';
+    adminInstanceModel.appendChild(option);
+  }
+  renderAdminInstances(d.instances || []);
+  const gpu = document.querySelector('#admin-instance-device option[value="gpu"]');
+  gpu.disabled = !d.gpu_available;
+}
+loadModelInventory().catch(err => {
+  modelAccessMsg.style.color = 'var(--danger)';
+  modelAccessMsg.textContent = err.message || 'Could not load model inventory.';
+});
+function renderAdminInstances(instances){
+  adminInstanceList.replaceChildren();
+  for (const instance of instances) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 10px; background:var(--panel-2); border:1px solid var(--line); border-radius:7px; font-size:11px;';
+    const label = document.createElement('span');
+    label.textContent = `${instance.name} · ${instance.kind} · ${instance.device.toUpperCase()} · #${instance.id.slice(0, 6)}${instance.status !== 'running' ? ` · ${instance.status}` : ''}`;
+    label.style.cssText = 'overflow-wrap:anywhere;';
+    row.appendChild(label);
+    if (instance.id !== 'default') {
+      const stop = document.createElement('button');
+      stop.className = 'btn-danger';
+      stop.textContent = 'Stop';
+      stop.onclick = async () => {
+        stop.disabled = true;
+        try {
+          const response = await fetch(`/api/model-instances/${encodeURIComponent(instance.id)}/stop`, {method:'POST'});
+          await readAdminJson(response, 'Could not stop model.');
+          await refreshAdminInstances();
+        } catch (error) {
+          document.getElementById('admin-instance-msg').textContent = error.message;
+          document.getElementById('admin-instance-msg').style.color = 'var(--danger)';
+          stop.disabled = false;
+        }
+      };
+      row.appendChild(stop);
+    }
+    adminInstanceList.appendChild(row);
+  }
+  if (!instances.length) adminInstanceList.textContent = 'No model instances are running.';
+}
+async function refreshAdminInstances(){
+  const response = await fetch('/admin/model_switching/list');
+  const data = await readAdminJson(response, 'Could not refresh running instances.');
+  renderAdminInstances(data.instances || []);
+}
+saveModelAccess.onclick = async () => {
+  modelAccessMsg.textContent = '';
+  saveModelAccess.disabled = true;
+  const access = {};
+  for (const model of modelInventoryData) access[model.path] = [];
+  modelInventory.querySelectorAll('input[data-model-path]:checked').forEach(input => {
+    access[input.dataset.modelPath].push(input.dataset.role);
+  });
+  try {
+    const r = await fetch('/admin/settings/model_access', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({access})});
+    await readAdminJson(r, 'Could not save model access.');
+    modelAccessMsg.style.color = 'var(--accent)';
+    modelAccessMsg.textContent = 'Model access saved.';
+  } catch (err) {
+    modelAccessMsg.style.color = 'var(--danger)';
+    modelAccessMsg.textContent = err.message || 'Could not save model access.';
+  } finally {
+    saveModelAccess.disabled = false;
+  }
+};
+document.getElementById('admin-start-instance').onclick = async () => {
+  const message = document.getElementById('admin-instance-msg');
+  message.textContent = '';
+  if (!adminInstanceModel.value) { message.textContent = 'Select an installed model.'; return; }
+  const model = JSON.parse(adminInstanceModel.value);
+  const button = document.getElementById('admin-start-instance');
+  button.disabled = true;
+  message.textContent = `Starting ${model.kind} model…`;
+  try {
+    const response = await fetch('/api/model-instances/start', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({...model, device:document.getElementById('admin-instance-device').value})});
+    const result = await readAdminJson(response, 'Could not start model instance.');
+    message.style.color = 'var(--accent)';
+    message.textContent = `${result.instance.name} is running.`;
+    await refreshAdminInstances();
+  } catch (error) {
+    message.style.color = 'var(--danger)';
+    message.textContent = error.message || 'Could not start model instance.';
+  } finally {
+    button.disabled = false;
+  }
+};
+
+document.getElementById('save-search-settings').onclick = async () => {
+  const msgEl = document.getElementById('search-settings-msg');
+  msgEl.textContent = '';
+  const body = {
+    engine: document.getElementById('search-engine').value,
+    max_sites: document.getElementById('search-max-sites').value,
+  };
+  const r = await fetch('/admin/settings/search', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const d = await r.json();
+  if (!r.ok) { msgEl.style.color = 'var(--danger)'; msgEl.textContent = d.error || 'Could not save.'; return; }
+  msgEl.style.color = 'var(--accent)'; msgEl.textContent = 'Saved.';
+  setTimeout(() => msgEl.textContent = '', 2000);
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terminal AI — Peers</title>
+<style>
+  :root{--bg:#0d1210; --panel:#131a17; --panel-2:#182019; --line:#25322b;
+        --text:#d7e4dc; --muted:#7c9086; --accent:#4fd68c; --danger:#e0715c; --info:#5cb8e0;}
+  *{box-sizing:border-box;}
+  body{background:var(--bg); color:var(--text); font-family:"JetBrains Mono","SF Mono",Consolas,monospace;
+       margin:0; padding:24px 32px;}
+  header{display:flex; justify-content:space-between; align-items:center; margin-bottom:24px;}
+  h1{font-size:16px; letter-spacing:.08em; text-transform:uppercase; margin:0;}
+  a.link{color:var(--muted); font-size:12px; text-decoration:none; border:1px solid var(--line); padding:6px 12px; border-radius:6px; margin-left:8px;}
+  a.link:hover{border-color:var(--accent); color:var(--accent);}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px; margin-bottom:20px;}
+  .panel h2{font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin:0 0 14px;}
+  table{width:100%; border-collapse:collapse; font-size:12px;}
+  th{text-align:left; color:var(--muted); font-weight:400; padding:6px 8px; border-bottom:1px solid var(--line);}
+  td{padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:middle; word-break:break-all;}
+  .btn{background:var(--accent); color:#08110c; border:none; border-radius:4px; padding:5px 12px; font-family:inherit; cursor:pointer; font-size:11px; font-weight:700;}
+  .btn-sm{background:var(--panel-2); color:var(--text); border:1px solid var(--line); border-radius:4px; padding:4px 9px; font-family:inherit; cursor:pointer; font-size:10px; margin-left:4px;}
+  .btn-sm:hover{border-color:var(--accent); color:var(--accent);}
+  .btn-sm.danger:hover{border-color:var(--danger); color:var(--danger);}
+  input[type=text]{background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:4px; padding:6px 9px; font-family:inherit; font-size:12px;}
+  .badge{font-size:10px; padding:3px 8px; border-radius:10px; text-transform:uppercase; letter-spacing:.04em;}
+  .badge.paired{background:rgba(79,214,140,.15); color:var(--accent);}
+  .badge.unpaired{background:rgba(224,180,92,.15); color:#e0b45c;}
+  .badge.unreachable{background:rgba(224,113,92,.15); color:var(--danger);}
+  .meta-row{display:flex; justify-content:space-between; font-size:12px; padding:5px 0; border-bottom:1px solid var(--line); gap:12px;}
+  .meta-row span:first-child{color:var(--muted); flex:0 0 auto;}
+  .meta-row code{word-break:break-all; text-align:right;}
+  .note{font-size:11px; color:var(--muted); margin-top:10px;}
+  .row-flex{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+  .copy-btn{cursor:pointer; color:var(--accent); font-size:10px; margin-left:6px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>Terminal AI — Peers</h1>
+  <div>
+    <a class="link" href="/">Chat</a>
+    <a class="link" href="/admin">Dashboard</a>
+    <a class="link" href="/admin/training">Training &amp; Models</a>
+    <a class="link" href="/admin/logout">Log out</a>
+  </div>
+</header>
+
+<input type="hidden" id="peer-data" value='{{ peers | tojson | forceescape }}'>
+
+<div class="panel">
+  <h2>This machine</h2>
+  <div class="meta-row"><span>LAN address</span><code>{{ own_url }}</code></div>
+  <div class="meta-row"><span>Worker key</span><code id="own-key">{{ own_key }}</code><span class="copy-btn" onclick="copyWorkerKey(this)">copy</span></div>
+  <div class="meta-row">
+    <span>Role when paired</span>
+    <span>
+      <select id="machine-role-select" style="background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:4px; padding:4px 8px; font-family:inherit; font-size:12px;">
+        <option value="master" {{ 'selected' if machine_role == 'master' else '' }}>Master (keep work local unless busier than a peer)</option>
+        <option value="slave" {{ 'selected' if machine_role == 'slave' else '' }}>Slave (hand off to a peer whenever one's free)</option>
+      </select>
+      <span id="role-save-msg" style="font-size:10px; color:var(--accent); margin-left:6px;"></span>
+    </span>
+  </div>
+  <div class="meta-row"><span>Auto-discover on startup</span><span>{{ 'ON' if auto_discover else 'OFF' }} (toggle in Control Panel Settings)</span></div>
+  <div class="meta-row"><span>Share downloaded models with peers</span><span>{{ 'ON' if share_models else 'OFF' }} (toggle in Control Panel Settings)</span></div>
+  <p class="note">To let another machine use THIS one as a peer, add this machine's LAN address and worker key on the OTHER machine's Peers page. Pairing is one-directional per entry — if you want load to flow both ways, pair both machines with each other. Role and priorities below are also settable from the desktop Control Panel.</p>
+</div>
+
+<div class="panel">
+  <h2>Known peers</h2>
+  <table>
+    <thead><tr><th>Name</th><th>URL</th><th>Status</th><th>Paired key</th><th>Priority (chat / code)</th><th></th></tr></thead>
+    <tbody id="peer-rows"></tbody>
+  </table>
+  <div id="no-peers" class="note" style="display:none;">No peers yet — add one below, or scan the network.</div>
+
+  <div class="row-flex" style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
+    <input type="text" id="new-peer-url" placeholder="http://192.168.1.x:8080" style="width:220px;">
+    <input type="text" id="new-peer-name" placeholder="name (optional)" style="width:140px;">
+    <input type="text" id="new-peer-key" placeholder="worker key from that machine" style="width:220px;">
+    <button class="btn" id="add-peer-btn">Add peer</button>
+    <button class="btn-sm" id="scan-btn">Scan network</button>
+  </div>
+  <div id="peer-error" style="color:var(--danger); font-size:11px; margin-top:6px;"></div>
+  <p class="note">Once a peer has a worker key set (paired), requests can be routed to it. Priority (1-10, higher = more preferred) can be set separately for general chat vs. code-shaped prompts — it biases which machine gets picked when more than one is free. This machine's own role above also matters: a "slave" machine will hand work to a free peer even when it's idle itself, where a "master" only offloads once it's genuinely busier than the peer.</p>
+</div>
+
+<script>
+// navigator.clipboard is undefined on plain-http LAN addresses (it needs a
+// "secure context"), so fall back to a hidden textarea + execCommand.
+function copyWorkerKey(btn){
+  const text = document.getElementById('own-key').textContent.trim();
+  const done = (ok) => { const o = btn.textContent; btn.textContent = ok ? 'copied' : 'copy failed'; setTimeout(() => btn.textContent = 'copy', 1400); };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => done(true), () => done(false));
+    return;
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.cssText = 'position:fixed; top:-1000px; opacity:0;';
+  document.body.appendChild(ta); ta.focus(); ta.select();
+  let ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+  document.body.removeChild(ta);
+  done(ok);
+}
+
+const peerEntries = {{ peers | tojson }};
+
+let peers = peerEntries;
+
+document.getElementById('machine-role-select').onchange = async (e) => {
+  const msgEl = document.getElementById('role-save-msg');
+  const r = await fetch('/admin/machine_role', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({role: e.target.value})});
+  const d = await r.json();
+  msgEl.textContent = r.ok ? 'Saved.' : (d.error || 'Could not save.');
+  msgEl.style.color = r.ok ? 'var(--accent)' : 'var(--danger)';
+  setTimeout(() => msgEl.textContent = '', 2000);
+};
+
+function renderPeers(){
+  const tbody = document.getElementById('peer-rows');
+  tbody.innerHTML = '';
+  document.getElementById('no-peers').style.display = peers.length ? 'none' : 'block';
+  for (const p of peers) {
+    const paired = !!p.api_key;
+    const pr = p.priorities || {};
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${p.name}${p.discovered ? ' <span style="color:var(--muted);">(discovered)</span>' : ''}</td>
+      <td>${p.url}</td>
+      <td><span class="badge unpaired" data-status-for="${p.url}">unknown</span></td>
+      <td><input type="text" value="${p.api_key || ''}" data-key-for="${p.url}" placeholder="paste worker key" style="width:180px;"></td>
+      <td>
+        ${paired ? `
+          <input type="number" min="1" max="10" value="${pr.chat || 5}" data-priority-chat="${p.url}" title="Chat priority" style="width:44px; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:4px; padding:3px 5px; font-family:inherit; font-size:11px;">
+          <input type="number" min="1" max="10" value="${pr.code || 5}" data-priority-code="${p.url}" title="Code priority" style="width:44px; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:4px; padding:3px 5px; font-family:inherit; font-size:11px; margin-left:4px;">
+          <button class="btn-sm" data-action="save-priority" data-url="${p.url}">Set</button>
+        ` : '<span class="note" style="margin:0;">pair first</span>'}
+      </td>
+      <td>
+        <button class="btn-sm" data-action="save" data-url="${p.url}">Save</button>
+        <button class="btn-sm" data-action="ping" data-url="${p.url}">Ping</button>
+        <button class="btn-sm danger" data-action="remove" data-url="${p.url}">Remove</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  }
+  tbody.querySelectorAll('button[data-action="save-priority"]').forEach(btn => {
+    btn.onclick = async () => {
+      const url = btn.dataset.url;
+      const chatEl = tbody.querySelector(`input[data-priority-chat="${CSS.escape(url)}"]`);
+      const codeEl = tbody.querySelector(`input[data-priority-code="${CSS.escape(url)}"]`);
+      const r = await fetch('/admin/peers/priority', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({url, chat: chatEl.value, code: codeEl.value})});
+      const d = await r.json();
+      if (!r.ok) { alert(d.error || 'Could not save priority.'); return; }
+      btn.textContent = 'Set ✓'; setTimeout(() => btn.textContent = 'Set', 1200);
+    };
+  });
+  tbody.querySelectorAll('button[data-action="save"]').forEach(btn => {
+    btn.onclick = async () => {
+      const url = btn.dataset.url;
+      const key = tbody.querySelector(`input[data-key-for="${CSS.escape(url)}"]`).value.trim();
+      const r = await fetch('/admin/peers/update', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({url, api_key: key})});
+      if (!r.ok) { const d = await r.json(); alert(d.error || 'Could not save.'); return; }
+      const peer = peers.find(p => p.url === url);
+      if (peer) peer.api_key = key;
+      btn.textContent = 'Saved'; setTimeout(() => btn.textContent = 'Save', 1200);
+      pingPeer(url);
+    };
+  });
+  tbody.querySelectorAll('button[data-action="ping"]').forEach(btn => {
+    btn.onclick = () => pingPeer(btn.dataset.url);
+  });
+  tbody.querySelectorAll('button[data-action="remove"]').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm(`Remove peer ${btn.dataset.url}?`)) return;
+      await fetch('/admin/peers/remove', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url: btn.dataset.url})});
+      peers = peers.filter(p => p.url !== btn.dataset.url);
+      renderPeers();
+    };
+  });
+  peers.forEach(p => pingPeer(p.url));
+}
+renderPeers();
+
+async function pingPeer(url){
+  const badge = document.querySelector(`span[data-status-for="${CSS.escape(url)}"]`);
+  if (!badge) return;
+  badge.textContent = 'checking…';
+  const r = await fetch('/admin/peers/ping', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url})});
+  const d = await r.json();
+  if (!d.reachable) {
+    badge.className = 'badge unreachable';
+    badge.textContent = 'unreachable';
+  } else if (d.paired) {
+    badge.className = 'badge paired';
+    const qd = d.status ? d.status.queue_depth : '?';
+    badge.textContent = `paired (queue: ${qd})`;
+  } else {
+    badge.className = 'badge unpaired';
+    badge.textContent = 'reachable, not paired';
+  }
+}
+
+document.getElementById('add-peer-btn').onclick = async () => {
+  const url = document.getElementById('new-peer-url').value.trim();
+  const name = document.getElementById('new-peer-name').value.trim();
+  const api_key = document.getElementById('new-peer-key').value.trim();
+  const errEl = document.getElementById('peer-error');
+  errEl.textContent = '';
+  if (!url) { errEl.textContent = 'Enter a URL first.'; return; }
+  const r = await fetch('/admin/peers/add', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({url, name, api_key})});
+  const d = await r.json();
+  if (!r.ok) { errEl.textContent = d.error || 'Could not add peer.'; return; }
+  location.reload();
+};
+
+document.getElementById('scan-btn').onclick = async () => {
+  const btn = document.getElementById('scan-btn');
+  btn.disabled = true; btn.textContent = 'Scanning… (a few seconds)';
+  await fetch('/admin/peers/scan', {method:'POST'});
+  setTimeout(() => location.reload(), 4000);
+};
+</script>
+</body>
+</html>

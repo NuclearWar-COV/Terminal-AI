@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terminal AI — Sign in</title>
+<style>
+  :root{--bg:#0d1210; --panel:#131a17; --panel-2:#182019; --line:#25322b;
+        --text:#d7e4dc; --muted:#7c9086; --accent:#4fd68c; --danger:#e0715c;}
+  *{box-sizing:border-box;}
+  body{background:var(--bg); color:var(--text); font-family:"JetBrains Mono","SF Mono",Consolas,monospace;
+       display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; padding:20px;}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:28px; width:300px;}
+  h1{font-size:14px; letter-spacing:.08em; text-transform:uppercase; margin:0 0 4px; display:flex; align-items:center; gap:8px;}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);}
+  p.sub{color:var(--muted); font-size:12px; margin:0 0 18px;}
+  input{width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--text); border-radius:6px;
+        padding:9px 10px; font-family:inherit; font-size:13px; margin-bottom:10px; box-sizing:border-box;}
+  button{width:100%; border:none; border-radius:6px; padding:10px; font-family:inherit; font-weight:700; cursor:pointer;}
+  .primary{background:var(--accent); color:#08110c;}
+  .secondary{background:transparent; border:1px solid var(--line); color:var(--text);}
+  .secondary:hover{border-color:var(--accent); color:var(--accent);}
+  .divider{display:flex; align-items:center; gap:10px; color:var(--muted); font-size:11px; margin:16px 0;}
+  .divider::before, .divider::after{content:""; flex:1; height:1px; background:var(--line);}
+  .error{color:var(--danger); font-size:12px; margin-bottom:12px;}
+  .toggle{color:var(--muted); font-size:11px; text-align:center; margin-top:14px; cursor:pointer; text-decoration:underline;}
+  .toggle:hover{color:var(--accent);}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1><span class="dot"></span>Terminal AI</h1>
+  <p class="sub">Sign in, create an account, or join as a guest.</p>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+  <div id="login-block" {% if show_register %}style="display:none;"{% endif %}>
+    <form method="POST">
+      <input type="text" name="username" placeholder="Username" autofocus>
+      <input type="password" name="password" placeholder="Password">
+      <button class="primary" type="submit" name="action" value="login">Sign in</button>
+    </form>
+    {% if allow_registration %}
+    <div class="toggle" onclick="document.getElementById('login-block').style.display='none';document.getElementById('register-block').style.display='block';">
+      New here? Create an account
+    </div>
+    {% endif %}
+  </div>
+
+  {% if allow_registration %}
+  <div id="register-block" {% if not show_register %}style="display:none;"{% endif %}>
+    <form method="POST">
+      <input type="text" name="new_username" placeholder="Choose a username (3-24 chars)">
+      <input type="password" name="new_password" placeholder="Choose a password">
+      <button class="primary" type="submit" name="action" value="register">Create account</button>
+    </form>
+    <p style="font-size:11px; color:var(--muted); margin:8px 0 0;">Accounts keep your chat history saved across visits, with multiple conversations.</p>
+    <div class="toggle" onclick="document.getElementById('register-block').style.display='none';document.getElementById('login-block').style.display='block';">
+      Already have an account? Sign in
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="divider">OR</div>
+  <form method="POST">
+    <button class="secondary" type="submit" name="action" value="guest">Continue as Guest</button>
+  </form>
+  <p style="font-size:11px; color:var(--muted); margin:8px 0 0; text-align:center;">Guests are anonymous — nothing is saved, and priority is lowest.</p>
+</div>
+</body>
+</html>

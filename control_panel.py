@@ -1,9 +1,16 @@
 """
-This GUI pop-up lets you:
-  - Edit server settings 
+control_panel.py — Terminal AI desktop Control Panel.
+
+This is what START.bat launches. It's a small local GUI (not the web
+chat itself) that lets you:
+  - Edit server settings (port, model, admin password, priority/token
+    defaults for new accounts and guests) — saved to config.json,
+    which web_server.py reads on startup.
   - Start / stop the actual web server as a background process.
   - Watch its console output live, without a separate terminal window.
 
+Uses only the Python standard library (tkinter) — nothing extra to
+install beyond what BUILD.bat already sets up.
 """
 
 import json, os, subprocess, socket, queue, threading
@@ -94,7 +101,7 @@ class App(tk.Tk):
         self.after(150, self._drain_log_queue)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-
+    # ── UI construction ────────────────────────────────────────
     def _build_ui(self):
         nb = ttk.Notebook(self)
         nb.pack(fill="both", expand=True, padx=8, pady=8)
@@ -166,7 +173,7 @@ class App(tk.Tk):
                   foreground="#888").pack(anchor="w", padx=12)
         ttk.Button(parent, text="Save Settings", command=self.save_settings).pack(anchor="w", padx=12, pady=10)
 
-
+    # ── Settings ────────────────────────────────────────────────
     def save_settings(self):
         int_fields = {"port", "default_priority", "default_tokens_per_min",
                       "guest_priority", "guest_tokens_per_min",
@@ -189,7 +196,7 @@ class App(tk.Tk):
         self.cfg = cfg
         messagebox.showinfo("Saved", "Settings saved to config.json.")
 
-
+    # ── Server process control ─────────────────────────────────
     def start_server(self):
         if self.proc is not None:
             return
@@ -197,9 +204,23 @@ class App(tk.Tk):
             messagebox.showerror("Not set up", f"Couldn't find:\n{VENV_PY}\n\nRun BUILD.bat first.")
             return
         self._append_log(f"Starting server: {SERVER_PY}\n")
+        # python.exe is a console-subsystem executable — even though this
+        # Control Panel window itself is GUI-only, Windows still pops a
+        # separate console for the subprocess unless explicitly told not
+        # to. CREATE_NO_WINDOW suppresses that window while stdout/stderr
+        # are still piped to us normally below.
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         child_env = dict(os.environ)
-        child_env["PYTHONUNBUFFERED"] = "1"  
+        child_env["PYTHONUNBUFFERED"] = "1"  # belt-and-suspenders against any buffered writes on the child side
+        # Force the child's stdout to actually BE UTF-8 bytes. Without
+        # this, Python on Windows encodes console output using the
+        # system's ANSI codepage (often cp1252) by default. We decode
+        # what comes back as UTF-8 below (_read_proc_output) — feeding it
+        # cp1252 bytes for any non-ASCII character (em dashes, arrows,
+        # etc. show up throughout the server's log messages) produces
+        # invalid UTF-8 sequences that decode as the "�" replacement
+        # character. This was never a display glitch, it was two ends of
+        # the pipe assuming two different encodings.
         child_env["PYTHONIOENCODING"] = "utf-8"
         child_env["PYTHONUTF8"] = "1"
         self.proc = subprocess.Popen(
@@ -223,6 +244,13 @@ class App(tk.Tk):
             pass
 
     def _read_proc_output(self):
+        # Read raw bytes off the file descriptor directly with os.read().
+        # This returns as soon as ANY data is available (even 1 byte) —
+        # unlike TextIOWrapper.read(n), which blocks trying to fill the
+        # full n characters before returning anything. That difference
+        # is exactly what caused the log to go completely silent: short
+        # log lines never accumulated enough to satisfy a fixed-size
+        # text read, so nothing ever came through.
         proc = self.proc
         try:
             fd = proc.stdout.fileno()

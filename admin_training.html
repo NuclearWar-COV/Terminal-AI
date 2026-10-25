@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terminal AI — Training &amp; Models</title>
+<style>
+  :root{--bg:#0d1210; --panel:#131a17; --panel-2:#182019; --line:#25322b;
+        --text:#d7e4dc; --muted:#7c9086; --accent:#4fd68c; --danger:#e0715c; --info:#5cb8e0;}
+  *{box-sizing:border-box;}
+  body{background:var(--bg); color:var(--text); font-family:"JetBrains Mono","SF Mono",Consolas,monospace;
+       margin:0; padding:24px 32px;}
+  header{display:flex; justify-content:space-between; align-items:center; margin-bottom:24px;}
+  h1{font-size:16px; letter-spacing:.08em; text-transform:uppercase; margin:0;}
+  a.link{color:var(--muted); font-size:12px; text-decoration:none; border:1px solid var(--line); padding:6px 12px; border-radius:6px; margin-left:8px;}
+  a.link:hover{border-color:var(--accent); color:var(--accent);}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px; margin-bottom:20px;}
+  .panel h2{font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin:0 0 14px;}
+  table{width:100%; border-collapse:collapse; font-size:12px;}
+  th{text-align:left; color:var(--muted); font-weight:400; padding:6px 8px; border-bottom:1px solid var(--line);}
+  td{padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:middle; word-break:break-all;}
+  .btn{background:var(--accent); color:#08110c; border:none; border-radius:4px; padding:5px 12px;
+        font-family:inherit; cursor:pointer; font-size:11px; font-weight:700;}
+  .btn:disabled{background:var(--line); color:var(--muted); cursor:default;}
+  .btn-sm{background:var(--panel-2); color:var(--text); border:1px solid var(--line); border-radius:4px; padding:4px 9px;
+        font-family:inherit; cursor:pointer; font-size:10px; margin-left:4px;}
+  .btn-sm:hover{border-color:var(--accent); color:var(--accent);}
+  .btn-sm.danger:hover{border-color:var(--danger); color:var(--danger);}
+  .badge{font-size:10px; padding:3px 8px; border-radius:10px; text-transform:uppercase; letter-spacing:.04em;}
+  .badge.downloaded{background:rgba(79,214,140,.15); color:var(--accent);}
+  .badge.not_downloaded{background:rgba(124,144,134,.15); color:var(--muted);}
+  .badge.downloading{background:rgba(92,184,224,.15); color:var(--info);}
+  .badge.paused{background:rgba(224,180,92,.15); color:#e0b45c;}
+  .badge.error{background:rgba(224,113,92,.15); color:var(--danger);}
+  .active-tag{font-size:10px; color:var(--accent); border:1px solid var(--accent); padding:2px 6px; border-radius:4px; margin-left:6px;}
+  .note{font-size:11px; color:var(--muted); margin-top:10px;}
+  .progress-track{width:120px; height:6px; background:var(--panel-2); border-radius:3px; overflow:hidden; display:inline-block; vertical-align:middle; margin-right:8px;}
+  .progress-fill{height:100%; background:var(--accent); transition:width .3s;}
+  input[type=text], input[type=number], textarea, select{background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+        border-radius:4px; padding:6px 9px; font-family:inherit; font-size:12px;}
+  textarea{width:100%; min-height:70px; resize:vertical;}
+  .log-box{background:#000; border:1px solid var(--line); border-radius:6px; padding:10px; font-size:11px;
+        max-height:220px; overflow-y:auto; white-space:pre-wrap; color:#9fd; margin-top:10px; display:none;}
+  .row-flex{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+  .tabs{display:flex; gap:4px; margin-bottom:16px;}
+  .tab-btn{background:var(--panel-2); border:1px solid var(--line); color:var(--muted); padding:8px 16px;
+        border-radius:6px 6px 0 0; cursor:pointer; font-family:inherit; font-size:12px;}
+  .tab-btn.active{background:var(--panel); color:var(--accent); border-bottom-color:var(--panel);}
+  .tab-content{display:none;}
+  .tab-content.active{display:block;}
+</style>
+</head>
+<body>
+<header>
+  <h1>Terminal AI — Training &amp; Models</h1>
+  <div>
+    <a class="link" href="/">Chat</a>
+    <a class="link" href="/admin">Dashboard</a>
+    <a class="link" href="/admin/peers">Peers</a>
+    <a class="link" href="/admin/logout">Log out</a>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="models">Models</button>
+  <button class="tab-btn" data-tab="scrape">Web Scraping</button>
+  <button class="tab-btn" data-tab="train">Training</button>
+</div>
+
+<!-- ══════════════════════ MODELS TAB ══════════════════════ -->
+<div class="tab-content active" id="tab-models">
+
+<div class="panel">
+  <h2>Download a base model</h2>
+  <table>
+    <thead><tr><th>Model</th><th>Status</th><th></th></tr></thead>
+    <tbody id="registry-rows"></tbody>
+  </table>
+  <p class="note">Downloads run as a separate process so they can be paused or cancelled without affecting the chat server.</p>
+
+  <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
+    <div class="row-flex">
+      <input type="text" id="custom-model-input" placeholder="Paste a Hugging Face model id (org/model) or a huggingface.co link" style="flex:1; min-width:280px;">
+      <button class="btn" id="custom-download-btn">Download</button>
+    </div>
+    <div id="custom-error" style="color:var(--danger); font-size:11px; margin-top:6px;"></div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Set the server's default chat model</h2>
+  <p class="note" style="margin-top:0;">Scanning for local models in: <code>{{ models_root }}</code> and <code>model_cache/</code>. If a model you downloaded isn't showing up, make sure it landed in one of those two folders.</p>
+  <table>
+    <thead><tr><th>Local model</th><th></th></tr></thead>
+    <tbody id="local-rows"></tbody>
+  </table>
+  <p class="note">Changing the default waits for any in-progress reply to finish, then reloads the default model without restarting the server. Use Admin → Model access &amp; instances to manage additional running models and user access.</p>
+</div>
+
+<div class="panel">
+  <h2>Image &amp; video models</h2>
+  <p class="note" style="margin-top:0;">
+    Used for &ldquo;draw me&hellip;&rdquo; / &ldquo;make a video of&hellip;&rdquo; in chat and the &#128444;&#65039; / &#127916; buttons &mdash; separate from the chat model above.
+    Scanning <code>{{ models_root }}</code> for diffusers folders (they contain <code>model_index.json</code>) and single-file
+    <code>.safetensors</code> checkpoints (Stable Diffusion 1.x / 2.x / XL, FLUX). Drop one in that folder and press Rescan,
+    paste its Hugging Face link in the download box at the top, or add it by path below.
+  </p>
+  {% if not diffusers_info.installed %}
+  <div style="border:1px solid var(--danger); color:var(--danger); border-radius:6px; padding:8px 10px; font-size:12px; margin-bottom:10px;">
+    The <code>diffusers</code> package isn't installed, so image/video models can be selected but not run yet.
+    Install with: <code>{{ install_hint }}</code> (inside this app's virtual environment, e.g.
+    <code>venv\Scripts\python.exe -m pip install diffusers imageio imageio-ffmpeg</code>), then restart the server.
+  </div>
+  {% endif %}
+  <table>
+    <thead><tr><th>Model</th><th>Type</th><th>Size</th><th></th></tr></thead>
+    <tbody id="media-rows"></tbody>
+  </table>
+  <div class="row-flex" style="margin-top:12px;">
+    <input type="text" id="media-path-input" placeholder="Add by path: a model folder (with model_index.json) or a .safetensors file" style="flex:1; min-width:280px;">
+    <button class="btn" id="media-add-btn">Add</button>
+    <button class="btn-sm" id="media-rescan-btn">Rescan</button>
+  </div>
+  <div id="media-error" style="color:var(--danger); font-size:11px; margin-top:6px;"></div>
+</div>
+
+{% if gguf_files %}
+<div class="panel">
+  <h2>GGUF files found (not loadable yet)</h2>
+  <table>
+    <thead><tr><th>File</th></tr></thead>
+    <tbody>
+      {% for f in gguf_files %}<tr><td>{{ f }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <p class="note">GGUF support isn't wired up in this version yet — these files are visible so you know they were found, but Activate isn't offered for them.</p>
+</div>
+{% endif %}
+
+</div>
+
+<!-- ══════════════════════ WEB SCRAPING TAB ══════════════════════ -->
+<div class="tab-content" id="tab-scrape">
+<div class="panel">
+  <h2>Web Scraping — collect training data</h2>
+  <p class="note" style="margin-top:0;">Wraps the existing search_engine.py / webscraper.py. Results save into web_training_data/, ready for the Training tab.</p>
+
+  <div class="row-flex" style="margin-bottom:12px;">
+    <label style="font-size:12px;"><input type="radio" name="scrape-mode" value="search" checked> Search a topic</label>
+    <label style="font-size:12px;"><input type="radio" name="scrape-mode" value="crawl"> Crawl a website</label>
+    <label style="font-size:12px;"><input type="radio" name="scrape-mode" value="urls"> Specific URLs</label>
+  </div>
+
+  <div id="scrape-fields-search">
+    <div class="row-flex">
+      <input type="text" id="scrape-topic" placeholder="Topic to search, e.g. 'machine learning basics'" style="flex:1; min-width:240px;">
+      <select id="scrape-engine">
+        <option value="duckduckgo">DuckDuckGo</option>
+        <option value="google">Google</option>
+        <option value="bing">Bing</option>
+        <option value="yahoo">Yahoo</option>
+      </select>
+      <input type="number" id="scrape-search-max" value="10" min="1" max="50" style="width:70px;" title="Max pages">
+    </div>
+  </div>
+  <div id="scrape-fields-crawl" style="display:none;">
+    <div class="row-flex">
+      <input type="text" id="scrape-start-url" placeholder="https://example.com" style="flex:1; min-width:240px;">
+      <input type="number" id="scrape-crawl-max" value="10" min="1" max="100" style="width:70px;" title="Max pages">
+    </div>
+  </div>
+  <div id="scrape-fields-urls" style="display:none;">
+    <textarea id="scrape-urls" placeholder="One URL per line"></textarea>
+  </div>
+
+  <div class="row-flex" style="margin-top:12px;">
+    <label style="font-size:11px; color:var(--muted);"><input type="checkbox" id="scrape-skip-visited" checked> Skip previously-scraped URLs</label>
+    <button class="btn" id="scrape-start-btn">Start Scraping</button>
+  </div>
+  <div id="scrape-error" style="color:var(--danger); font-size:11px; margin-top:6px;"></div>
+  <div id="scrape-log" class="log-box"></div>
+</div>
+</div>
+
+<!-- ══════════════════════ TRAINING TAB ══════════════════════ -->
+<div class="tab-content" id="tab-train">
+
+<div class="panel">
+  <h2>Upload training data</h2>
+  <p class="note" style="margin-top:0;">
+    Prompt/answer files (<code>.csv</code>, <code>.tsv</code>, <code>.json</code>, <code>.jsonl</code>, <code>.parquet</code>) train the
+    model to actually answer like the examples — one column that looks like a prompt (<code>prompt</code>/<code>question</code>/<code>input</code>/<code>instruction</code>)
+    and one that looks like an answer (<code>answer</code>/<code>response</code>/<code>output</code>/<code>completion</code>), column names matched case-insensitively.
+    Raw text/code files are also accepted and used as a plain text corpus. Files land in <code id="train-upload-dest">web_training_data/admin_uploads/</code>.
+  </p>
+  <div class="row-flex">
+    <input type="file" id="train-upload-files" multiple style="display:none;">
+    <input type="file" id="train-upload-folder" webkitdirectory directory multiple style="display:none;">
+    <button class="btn-sm" id="train-upload-files-btn">Upload file(s)</button>
+    <button class="btn-sm" id="train-upload-folder-btn">Upload a folder</button>
+    <span id="train-upload-status" style="font-size:11px; color:var(--muted);"></span>
+  </div>
+  <div id="train-upload-error" style="color:var(--danger); font-size:11px; margin-top:6px;"></div>
+</div>
+
+<div class="panel">
+  <h2>Train on collected data</h2>
+  <p class="note" style="margin-top:0;">Wraps train.py — trains a LoRA adapter on top of the current base model (base weights stay frozen). Uses whatever's in the data folder below: uploads from above, anything from the Web Scraping tab, and files people have attached in chat.</p>
+
+  <div class="row-flex">
+    <input type="text" id="train-data-dir" value="" placeholder="Data folder (defaults to web_training_data/)" style="flex:1; min-width:260px;">
+    <input type="number" id="train-epochs" value="2" min="1" max="20" style="width:60px;" title="Epochs">
+    <label style="font-size:11px; color:var(--muted);"><input type="checkbox" id="train-auto-activate" checked> Auto-activate when done</label>
+  </div>
+  <div id="train-data-summary" class="note" style="margin-top:8px;"></div>
+  <div class="row-flex" style="margin-top:10px;">
+    <button class="btn" id="train-start-btn">Start Training</button>
+    <button class="btn-sm danger" id="train-stop-btn" style="display:none;">Stop</button>
+  </div>
+
+  <div id="train-progress-wrap" style="display:none; margin-top:12px;">
+    <div class="progress-track" style="width:100%;"><div class="progress-fill" id="train-progress-fill" style="width:0%;"></div></div>
+    <div id="train-progress-label" style="font-size:11px; color:var(--muted); margin-top:4px;"></div>
+  </div>
+  <div id="train-error" style="color:var(--danger); font-size:11px; margin-top:6px;"></div>
+  <div id="train-log" class="log-box"></div>
+</div>
+
+</div>
+
+<script>
+/* ── Tabs ── */
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  };
+});
+
+/* ══════════════════ MODELS ══════════════════ */
+const registryRows = {{ registry_rows | tojson }};
+const localModels = {{ local_models | tojson }};
+const currentModel = {{ current_model | tojson }};
+
+function renderRegistry(rows){
+  const tbody = document.getElementById('registry-rows');
+  tbody.innerHTML = '';
+  for (const row of rows) {
+    const tr = document.createElement('tr');
+    const isActive = row.id === currentModel;
+    let actionCell;
+    if (row.status === 'downloaded') {
+      actionCell = '<span style="color:var(--muted);font-size:11px;">already have it</span>';
+    } else if (row.status === 'downloading' || row.status === 'paused') {
+      const pct = row.progress_pct || 0;
+      actionCell = `
+        <div class="progress-track"><div class="progress-fill" style="width:${pct}%;"></div></div>${pct}%
+        ${row.status === 'paused'
+          ? `<button class="btn-sm" data-action="resume" data-model="${row.id}">Resume</button>`
+          : `<button class="btn-sm" data-action="pause" data-model="${row.id}">Pause</button>`}
+        <button class="btn-sm danger" data-action="cancel" data-model="${row.id}">Cancel</button>
+      `;
+    } else {
+      actionCell = `<button class="btn" data-action="start" data-model="${row.id}">Download</button>`;
+    }
+    tr.innerHTML = `
+      <td>${row.id}${isActive ? '<span class="active-tag">ACTIVE</span>' : ''}</td>
+      <td><span class="badge ${row.status}">${row.status.replace('_',' ')}</span></td>
+      <td>${actionCell}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+  tbody.querySelectorAll('button[data-action="start"]').forEach(btn => {
+    btn.onclick = async () => {
+      btn.disabled = true; btn.textContent = 'Starting…';
+      await fetch('/admin/models/download', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({model_id: btn.dataset.model})});
+      pollModelStatus();
+    };
+  });
+  tbody.querySelectorAll('button[data-action="pause"]').forEach(btn => {
+    btn.onclick = async () => {
+      btn.disabled = true;
+      const r = await fetch('/admin/models/download/pause', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({model_id: btn.dataset.model})});
+      if (!r.ok) { const d = await r.json().catch(()=>({})); alert(d.error || 'Pause failed.'); }
+      btn.disabled = false;
+      pollModelStatus();
+    };
+  });
+  tbody.querySelectorAll('button[data-action="resume"]').forEach(btn => {
+    btn.onclick = async () => {
+      btn.disabled = true;
+      const r = await fetch('/admin/models/download/resume', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({model_id: btn.dataset.model})});
+      if (!r.ok) { const d = await r.json().catch(()=>({})); alert(d.error || 'Resume failed.'); }
+      btn.disabled = false;
+      pollModelStatus();
+    };
+  });
+  tbody.querySelectorAll('button[data-action="cancel"]').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm('Cancel this download?')) return;
+      const r = await fetch('/admin/models/download/cancel', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({model_id: btn.dataset.model})});
+      if (!r.ok) { const d = await r.json().catch(()=>({})); alert(d.error || 'Cancel failed.'); }
+      pollModelStatus();
+    };
+  });
+}
+renderRegistry(registryRows);
+
+function renderLocal(){
+  const tbody = document.getElementById('local-rows');
+  tbody.innerHTML = '';
+  if (!localModels.length) {
+    tbody.innerHTML = '<tr><td colspan="2" style="color:var(--muted);">No downloaded models found yet.</td></tr>';
+    return;
+  }
+  for (const path of localModels) {
+    const isActive = path === currentModel;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${path}${isActive ? '<span class="active-tag">ACTIVE</span>' : ''}</td>
+      <td>${isActive ? '' : `<button class="btn" data-path="${path}">Activate</button>`}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+  tbody.querySelectorAll('button[data-path]').forEach(btn => {
+    btn.onclick = async () => {
+      btn.disabled = true;
+      btn.textContent = 'Switching… (waiting for queue)';
+      const r = await fetch('/admin/models/activate', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({path: btn.dataset.path})});
+      const d = await r.json();
+      if (!r.ok) { alert(d.error || 'Switch failed'); btn.disabled = false; btn.textContent = 'Activate'; return; }
+      location.reload();
+    };
+  });
+}
+renderLocal();
+
+/* ── Image & video models ── */
+let mediaModels = {{ media_list | tojson }};
+function mediaCell(tag, text, css){ const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (css) el.style.cssText = css; return el; }
+function renderMedia(){
+  const tbody = document.getElementById('media-rows');
+  tbody.innerHTML = '';
+  if (!mediaModels.length) {
+    const tr = document.createElement('tr'); const td = mediaCell('td', 'No image or video models found yet.', 'color:var(--muted);'); td.colSpan = 4; tr.appendChild(td); tbody.appendChild(tr);
+    return;
+  }
+  for (const m of mediaModels) {
+    const tr = document.createElement('tr');
+    const name = document.createElement('td');
+    name.appendChild(mediaCell('div', m.name, 'font-weight:600; word-break:break-all;'));
+    name.appendChild(mediaCell('div', m.path, 'font-size:10px; color:var(--muted); word-break:break-all;'));
+    if (m.note) name.appendChild(mediaCell('div', m.note, 'font-size:11px; margin-top:3px; color:' + (m.usable ? 'var(--muted)' : 'var(--danger)') + ';'));
+    for (const k of (m.active_for || [])) { const t = mediaCell('span', 'ACTIVE FOR ' + (k === 'image' ? 'IMAGES' : 'VIDEO')); t.className = 'active-tag'; name.appendChild(t); }
+    const type = document.createElement('td');
+    type.appendChild(mediaCell('div', m.kind === 'video' ? 'Video' : 'Image'));
+    type.appendChild(mediaCell('div', (m.format === 'folder' ? 'folder · ' : 'single file · ') + m.pipeline, 'font-size:10px; color:var(--muted);'));
+    const size = mediaCell('td', m.size_gb ? m.size_gb + ' GB' : '');
+    const act = document.createElement('td');
+    if (m.usable) {
+      const isActive = (m.active_for || []).includes(m.kind);
+      const b = mediaCell('button', isActive ? 'Turn off' : (m.kind === 'video' ? 'Use for video' : 'Use for images'));
+      b.className = isActive ? 'btn-sm' : 'btn';
+      b.onclick = () => mediaCall('/admin/media_models/select', {kind: m.kind, path: isActive ? '' : m.path}, b);
+      act.appendChild(b);
+    } else {
+      act.appendChild(mediaCell('span', "Can't be used", 'color:var(--muted); font-size:11px;'));
+    }
+    if (m.extra) {
+      const f = mediaCell('button', 'Forget', 'margin-left:6px;'); f.className = 'btn-sm danger';
+      f.onclick = () => mediaCall('/admin/media_models/forget', {path: m.path}, f);
+      act.appendChild(f);
+    }
+    tr.append(name, type, size, act);
+    tbody.appendChild(tr);
+  }
+}
+async function mediaCall(url, body, btn){
+  const errEl = document.getElementById('media-error'); errEl.textContent = '';
+  const label = btn ? btn.textContent : ''; if (btn) { btn.disabled = true; btn.textContent = 'Working…'; }
+  try {
+    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Request failed');
+    mediaModels = d.models; renderMedia();
+  } catch (e) {
+    errEl.textContent = e.message; if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
+}
+document.getElementById('media-add-btn').onclick = async () => {
+  const input = document.getElementById('media-path-input');
+  if (!input.value.trim()) { document.getElementById('media-error').textContent = 'Paste a path first.'; return; }
+  await mediaCall('/admin/media_models/add', {path: input.value}, document.getElementById('media-add-btn'));
+  if (!document.getElementById('media-error').textContent) input.value = '';
+  document.getElementById('media-add-btn').textContent = 'Add'; document.getElementById('media-add-btn').disabled = false;
+};
+document.getElementById('media-rescan-btn').onclick = async () => {
+  const r = await fetch('/admin/media_models/list'); const d = await r.json(); mediaModels = d.models; renderMedia();
+};
+renderMedia();
+
+document.getElementById('custom-download-btn').onclick = async () => {
+  const input = document.getElementById('custom-model-input');
+  const errEl = document.getElementById('custom-error');
+  errEl.textContent = '';
+  const raw = input.value.trim();
+  if (!raw) { errEl.textContent = 'Paste a model id or Hugging Face URL first.'; return; }
+  const btn = document.getElementById('custom-download-btn');
+  btn.disabled = true; btn.textContent = 'Starting…';
+  const r = await fetch('/admin/models/download_custom', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({model: raw})});
+  const d = await r.json();
+  btn.disabled = false; btn.textContent = 'Download';
+  if (!r.ok) { errEl.textContent = d.error || 'Could not start download.'; return; }
+  input.value = '';
+  registryRows.push({id: d.model_id, status: 'downloading', progress_pct: 0});
+  renderRegistry(registryRows);
+  pollModelStatus();
+};
+
+let modelPollActive = false;
+async function pollModelStatus(){
+  if (modelPollActive) return;
+  modelPollActive = true;
+  try {
+    const r = await fetch('/admin/models/status');
+    const statuses = await r.json();
+    let stillGoing = false;
+    let newlyDone = false;
+    for (const row of registryRows) {
+      const s = statuses[row.id];
+      if (s) {
+        const wasActive = row.status === 'downloading' || row.status === 'paused';
+        row.status = s.state === 'done' ? 'downloaded' : s.state;
+        row.progress_pct = s.progress_pct || 0;
+        if (s.state === 'downloading' || s.state === 'paused') stillGoing = true;
+        // BUG FIX: this used to reload the page whenever ANY entry, even
+        // ones from a download that finished a while ago, showed 'done' —
+        // since that server-side status is never cleared, it caused an
+        // infinite reload loop on this whole page every ~1.5s (which is
+        // also what was silently cancelling Pause/Resume/Cancel clicks —
+        // browsers abort in-flight fetch() calls on navigation). Only
+        // react to a fresh transition observed during THIS page load.
+        if (wasActive && s.state === 'done') newlyDone = true;
+      }
+    }
+    renderRegistry(registryRows);
+    modelPollActive = false;
+    if (stillGoing) {
+      setTimeout(pollModelStatus, 1500);
+    } else if (newlyDone) {
+      showRefreshHint();
+    }
+  } catch(e) { modelPollActive = false; }
+}
+
+function showRefreshHint(){
+  if (document.getElementById('model-refresh-hint')) return;
+  const el = document.createElement('div');
+  el.id = 'model-refresh-hint';
+  el.style.cssText = 'margin-top:10px; padding:8px 12px; background:rgba(79,214,140,.12); border:1px solid var(--accent); border-radius:6px; font-size:11px; display:flex; justify-content:space-between; align-items:center; gap:10px;';
+  el.innerHTML = `<span>A download finished. Refresh to see it in the activation list below.</span>`;
+  const btn = document.createElement('button');
+  btn.className = 'btn-sm';
+  btn.textContent = 'Refresh';
+  btn.onclick = () => location.reload();
+  el.appendChild(btn);
+  document.getElementById('registry-rows').closest('.panel').appendChild(el);
+}
+
+setTimeout(pollModelStatus, 1500);
+
+/* ══════════════════ WEB SCRAPING ══════════════════ */
+document.querySelectorAll('input[name="scrape-mode"]').forEach(r => {
+  r.onchange = () => {
+    document.getElementById('scrape-fields-search').style.display = r.value === 'search' && r.checked ? 'block' : 'none';
+    document.getElementById('scrape-fields-crawl').style.display = r.value === 'crawl' && r.checked ? 'block' : 'none';
+    document.getElementById('scrape-fields-urls').style.display = r.value === 'urls' && r.checked ? 'block' : 'none';
+  };
+});
+document.querySelectorAll('input[name="scrape-mode"]').forEach(r => { if (r.checked) r.onchange(); });
+
+document.getElementById('scrape-start-btn').onclick = async () => {
+  const mode = document.querySelector('input[name="scrape-mode"]:checked').value;
+  const errEl = document.getElementById('scrape-error');
+  errEl.textContent = '';
+  const body = {mode, skip_visited: document.getElementById('scrape-skip-visited').checked};
+  if (mode === 'search') {
+    body.topic = document.getElementById('scrape-topic').value.trim();
+    body.engine = document.getElementById('scrape-engine').value;
+    body.max_pages = parseInt(document.getElementById('scrape-search-max').value) || 10;
+    if (!body.topic) { errEl.textContent = 'Enter a topic to search.'; return; }
+  } else if (mode === 'crawl') {
+    body.start_url = document.getElementById('scrape-start-url').value.trim();
+    body.max_pages = parseInt(document.getElementById('scrape-crawl-max').value) || 10;
+    if (!body.start_url) { errEl.textContent = 'Enter a start URL.'; return; }
+  } else {
+    body.urls = document.getElementById('scrape-urls').value;
+    if (!body.urls.trim()) { errEl.textContent = 'Enter at least one URL.'; return; }
+  }
+  const btn = document.getElementById('scrape-start-btn');
+  btn.disabled = true; btn.textContent = 'Running…';
+  try {
+    const r = await fetch('/admin/scrape/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Could not start.');
+    document.getElementById('scrape-log').style.display = 'block';
+    pollScrapeStatus();
+  } catch (error) {
+    errEl.textContent = error.message || 'Could not start the scrape.';
+    btn.disabled = false;
+    btn.textContent = 'Start Scraping';
+  }
+};
+
+async function pollScrapeStatus(){
+  const logEl = document.getElementById('scrape-log');
+  const btn = document.getElementById('scrape-start-btn');
+  try {
+    const r = await fetch('/admin/scrape/status');
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Could not read scrape status.');
+    logEl.textContent = d.log || '';
+    logEl.scrollTop = logEl.scrollHeight;
+    if (d.state === 'running') {
+      setTimeout(pollScrapeStatus, 1500);
+    } else {
+      btn.disabled = false; btn.textContent = 'Start Scraping';
+      if (d.state === 'done' && d.page_count) {
+        logEl.textContent += `\n✓ Saved ${d.page_count} page(s) to ${d.saved_to}\nReady for the Training tab.`;
+      }
+    }
+  } catch (error) {
+    logEl.textContent += `\nERROR: ${error.message || 'Could not read scrape status.'}`;
+    btn.disabled = false;
+    btn.textContent = 'Start Scraping';
+  }
+}
+
+/* ══════════════════ TRAINING ══════════════════ */
+document.getElementById('train-start-btn').onclick = async () => {
+  const errEl = document.getElementById('train-error');
+  errEl.textContent = '';
+  const dataDir = document.getElementById('train-data-dir').value.trim();
+  const epochs = parseInt(document.getElementById('train-epochs').value) || 2;
+  const autoActivate = document.getElementById('train-auto-activate').checked;
+  const body = {epochs, auto_activate: autoActivate};
+  if (dataDir) body.data_dir = dataDir;
+  const btn = document.getElementById('train-start-btn');
+  btn.disabled = true; btn.textContent = 'Starting…';
+  const r = await fetch('/admin/train/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const d = await r.json();
+  btn.textContent = 'Start Training';
+  if (!r.ok) { errEl.textContent = d.error || 'Could not start training.'; btn.disabled = false; return; }
+  document.getElementById('train-log').style.display = 'block';
+  document.getElementById('train-progress-wrap').style.display = 'block';
+  document.getElementById('train-stop-btn').style.display = 'inline-block';
+  pollTrainStatus();
+};
+
+document.getElementById('train-stop-btn').onclick = async () => {
+  if (!confirm('Stop training? Progress so far is lost (the adapter only saves at the end).')) return;
+  await fetch('/admin/train/stop', {method:'POST'});
+};
+
+async function pollTrainStatus(){
+  const r = await fetch('/admin/train/status');
+  const d = await r.json();
+  document.getElementById('train-progress-fill').style.width = (d.progress_pct || 0) + '%';
+  document.getElementById('train-progress-label').textContent =
+    `${(d.progress_pct || 0).toFixed(0)}%` + formatETA(d.eta);
+  const logEl = document.getElementById('train-log');
+  logEl.textContent = d.log || '';
+  logEl.scrollTop = logEl.scrollHeight;
+  if (d.state === 'running' || d.state === 'stopping') {
+    setTimeout(pollTrainStatus, 1500);
+  } else {
+    document.getElementById('train-start-btn').disabled = false;
+    document.getElementById('train-stop-btn').style.display = 'none';
+    if (d.state === 'done') logEl.textContent += '\n✓ Training complete.';
+    else if (d.state === 'stopped') logEl.textContent += '\n Stopped by admin.';
+    else if (d.state === 'error') logEl.textContent += '\n✗ Training failed — see log above.';
+  }
+}
+
+function formatETA(sec){
+  if (sec === null || sec === undefined || sec < 0) return '';
+  sec = Math.max(0, Math.round(sec));
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return m > 0 ? ` — about ${m}m ${s}s remaining` : ` — about ${s}s remaining`;
+}
+
+// Training keeps running server-side regardless of what the browser is
+// doing, but the page's own JS state (the poll loop, the log text) used
+// to only exist from the moment "Start Training" was clicked — so
+// switching to another tab/page and back showed a blank panel even
+// though training was still going (or had already finished). Check the
+// real status on load and restore the UI to match it either way.
+(async function resumeTrainingPanel(){
+  try {
+    const r = await fetch('/admin/train/status');
+    const d = await r.json();
+    if (d.state === 'idle' && !d.log) return;  // nothing to restore
+    document.getElementById('train-log').style.display = 'block';
+    document.getElementById('train-progress-wrap').style.display = 'block';
+    document.getElementById('train-progress-fill').style.width = (d.progress_pct || 0) + '%';
+    document.getElementById('train-progress-label').textContent =
+      `${(d.progress_pct || 0).toFixed(0)}%` + formatETA(d.eta);
+    const logEl = document.getElementById('train-log');
+    logEl.textContent = d.log || '';
+    if (d.state === 'running' || d.state === 'stopping') {
+      document.getElementById('train-start-btn').disabled = true;
+      document.getElementById('train-stop-btn').style.display = 'inline-block';
+      pollTrainStatus();
+    } else {
+      if (d.state === 'done') logEl.textContent += '\n✓ Training complete.';
+      else if (d.state === 'stopped') logEl.textContent += '\n Stopped by admin.';
+      else if (d.state === 'error') logEl.textContent += '\n✗ Training failed — see log above.';
+    }
+    logEl.scrollTop = logEl.scrollHeight;
+  } catch (e) {}
+})();
+
+/* ══════════════════ TRAINING DATA UPLOAD ══════════════════ */
+async function uploadTrainingFiles(fileList, useRelativePaths){
+  const statusEl = document.getElementById('train-upload-status');
+  const errEl = document.getElementById('train-upload-error');
+  errEl.textContent = '';
+  if (!fileList.length) return;
+  const fd = new FormData();
+  for (const f of fileList) {
+    fd.append('files', f);
+    fd.append('paths', useRelativePaths && f.webkitRelativePath ? f.webkitRelativePath : f.name);
+  }
+  statusEl.textContent = `Uploading ${fileList.length} file(s)...`;
+  try {
+    const r = await fetch('/admin/train/upload', {method:'POST', body: fd});
+    const d = await r.json();
+    if (!r.ok) { errEl.textContent = d.error || 'Upload failed.'; statusEl.textContent = ''; return; }
+    statusEl.textContent = `✓ Saved ${d.saved} file(s) to ${d.dest}`;
+    if (d.errors && d.errors.length) errEl.textContent = d.errors.join('; ');
+    refreshDataSummary();
+  } catch (e) {
+    errEl.textContent = String(e);
+    statusEl.textContent = '';
+  }
+}
+
+document.getElementById('train-upload-files-btn').onclick = () => document.getElementById('train-upload-files').click();
+document.getElementById('train-upload-folder-btn').onclick = () => document.getElementById('train-upload-folder').click();
+document.getElementById('train-upload-files').addEventListener('change', (e) => {
+  uploadTrainingFiles(Array.from(e.target.files), false);
+  e.target.value = '';
+});
+document.getElementById('train-upload-folder').addEventListener('change', (e) => {
+  uploadTrainingFiles(Array.from(e.target.files), true);
+  e.target.value = '';
+});
+
+async function refreshDataSummary(){
+  const dataDir = document.getElementById('train-data-dir').value.trim();
+  const summaryEl = document.getElementById('train-data-summary');
+  try {
+    const q = dataDir ? `?data_dir=${encodeURIComponent(dataDir)}` : '';
+    const r = await fetch('/admin/train/data_summary' + q);
+    const d = await r.json();
+    if (!d.exists) { summaryEl.textContent = 'Data folder not found yet — upload something above or run a web scrape first.'; return; }
+    summaryEl.textContent = `In data folder: ${d.qa_files} prompt/answer file(s), ${d.text_files} raw text file(s)` +
+      (d.other_files ? `, ${d.other_files} other file(s) (ignored)` : '') + '.';
+  } catch (e) { summaryEl.textContent = ''; }
+}
+document.getElementById('train-data-dir').addEventListener('change', refreshDataSummary);
+refreshDataSummary();
+
+/* ══════════════════ TEST THE TRAINED MODEL ══════════════════ */
+</script>
+</body>
+</html>
